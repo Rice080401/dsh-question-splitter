@@ -35,14 +35,27 @@ DeepSeek Harness（DSH）Desktop 插件：在左侧导航栏提供一个「题�
 
 ## 安装
 
-### 方式 A：插件管理器（推荐）
+### 方式 A：插件管理器（推荐，需要本机安装 Git）
 
 1. 侧栏打开 **插件** → **添加插件**；
-2. 填入 Git 地址 `https://github.com/Rice080401/dsh-question-splitter`（或本地目录）；
+2. 填入 Git 地址 `https://github.com/Rice080401/dsh-question-splitter`；
 3. 安装完成后点击 **立即启用**；
 4. 左侧导航栏出现「题目分割」图标即安装成功。
 
-### 方式 B：命令行
+> 插件管理器与 `pnpm` 会调用本机 `git` 拉取仓库，因此需要 Git 已加入 `PATH`。
+
+### 方式 B：免 Git 安装（Release ZIP）
+
+1. 从 [Releases](https://github.com/Rice080401/dsh-question-splitter/releases/latest) 下载
+   [`dsh-question-splitter-v1.0.0.zip`](https://github.com/Rice080401/dsh-question-splitter/releases/download/v1.0.0/dsh-question-splitter-v1.0.0.zip)；
+2. 解压到 `%USERPROFILE%\.dsh\plugins\dsh-question-splitter`；
+3. 在 **插件 → 添加插件** 中选择这个本地目录安装并启用；或命令行：
+
+```powershell
+dsh plugin --profile desktop add "link:$env:USERPROFILE\.dsh\plugins\dsh-question-splitter"
+```
+
+### 方式 C：命令行（GitHub 源）
 
 ```powershell
 dsh plugin --profile desktop add github:Rice080401/dsh-question-splitter
@@ -51,7 +64,7 @@ dsh plugin --profile desktop add github:Rice080401/dsh-question-splitter
 然后在 **插件** 页面启用 `dsh-question-splitter`，或手动把包名加入
 `~/.dsh/profiles/desktop/package.json` 的 `dsh.profile.bundles` 列表。
 
-### 方式 C：本地开发（link）
+### 方式 D：本地开发（link）
 
 ```powershell
 git clone https://github.com/Rice080401/dsh-question-splitter "$env:USERPROFILE\.dsh\plugins\dsh-question-splitter"

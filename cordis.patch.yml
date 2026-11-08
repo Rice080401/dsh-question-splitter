@@ -1,0 +1,7 @@
+# dsh-question-splitter bundle patch: one row added to the web profile.
+# The row id addresses neither the client module nor any service; the package
+# name is the Loader specifier, so the host half (index.js) and the browser
+# half (client.js) both resolve from this one entry.
+- insert:
+    - id: question-splitter
+      name: dsh-question-splitter

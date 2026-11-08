@@ -1,0 +1,9 @@
+# plugin runtime data
+.data/
+node_modules/
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini

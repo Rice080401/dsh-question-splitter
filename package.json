@@ -1,0 +1,54 @@
+{
+  "name": "dsh-question-splitter",
+  "version": "1.0.0",
+  "description": "DSH 插件：识别图片中的题号（1. 2. 3.），把整页题目自动切成单题图片并保存到桌面。使用 Windows 本地 OCR，图片不出本机。",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "cordis",
+    "ocr",
+    "question-splitter",
+    "windows",
+    "exam",
+    "题目分割"
+  ],
+  "author": "Rice (https://github.com/Rice080401)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rice080401/dsh-question-splitter.git"
+  },
+  "homepage": "https://github.com/Rice080401/dsh-question-splitter#readme",
+  "bugs": {
+    "url": "https://github.com/Rice080401/dsh-question-splitter/issues"
+  }
+}

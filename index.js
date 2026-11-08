@@ -15,6 +15,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { processImage, runPowerShellFile } from "./lib/pipeline.js";
+import {
+  buildVisionPrompt,
+  listVisionModels,
+  parseVisionQuestions,
+  requestQuestionPositions,
+  resolveVisionTarget,
+} from "./lib/vision.js";
 
 const PLUGIN_ID = "dsh-question-splitter";
 const API_PREFIX = "/dsh-question-splitter/api";
@@ -34,8 +41,10 @@ const logDir = path.join(dataDir, "logs");
 const logFile = path.join(logDir, "plugin.log");
 
 let logger = null;
+let hostCtx = null;
 let desktopDirCache = null;
 let languagesCache = null;
+let visionTargetCache = null;
 const jobs = new Map();
 let splitChain = Promise.resolve();
 
@@ -146,6 +155,7 @@ function decodeImagePayload(dataUrl, fileName) {
   const match = /^data:([^;,]*);base64,(.*)$/su.exec(dataUrl);
   const base64 = match ? match[2] : dataUrl;
   let ext = "png";
+  let mediaType = match?.[1] ? match[1].toLowerCase() : "";
   const nameExt = /\.(png|jpe?g|bmp|gif|tiff?|webp)$/iu.exec(String(fileName ?? ""));
   if (nameExt) {
     ext = nameExt[1].toLowerCase().replace("jpeg", "jpg");
@@ -157,10 +167,67 @@ function decodeImagePayload(dataUrl, fileName) {
     else if (mime.includes("tiff")) ext = "tiff";
     else if (mime.includes("webp")) ext = "webp";
   }
+  const mimeByExt = {
+    jpg: "image/jpeg",
+    png: "image/png",
+    bmp: "image/bmp",
+    gif: "image/gif",
+    tiff: "image/tiff",
+    webp: "image/webp",
+  };
+  if (!mediaType || !mediaType.startsWith("image/")) mediaType = mimeByExt[ext] ?? "image/png";
   const buffer = Buffer.from(base64, "base64");
   if (buffer.length === 0) throw new Error("图片数据为空。");
   if (buffer.length > MAX_IMAGE_BYTES) throw new Error("图片过大（超过 40MB），请压缩后再试。");
-  return { buffer, ext };
+  return { buffer, ext, mediaType, base64 };
+}
+
+/**
+ * Ask the configured multimodal model where the questions start.
+ * Positions from one call are noisy, so two independent calls are averaged.
+ * @returns {Promise<{questions: Array<{label: string, y: number}>, provider: string, model: string, raw: string, samples: number}>}
+ */
+async function analyzeWithVision({ imageBase64, mediaType, hint, prompt }) {
+  if (!hostCtx) throw new Error("插件尚未完成初始化，请稍后重试。");
+  const target = await resolveVisionTarget(hostCtx, visionTargetCache);
+  if (!target) throw new Error("没有找到支持图片输入的模型，请先在 DSH 设置中选用支持图片的模型。");
+  visionTargetCache = target;
+  const finalPrompt = typeof prompt === "string" && prompt.trim() ? prompt : buildVisionPrompt(hint);
+  const runs = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = await requestQuestionPositions(hostCtx, {
+        imageBase64,
+        mediaType,
+        prompt: finalPrompt,
+        target,
+        log,
+      });
+      const questions = parseVisionQuestions(result.text);
+      if (questions) runs.push({ questions, provider: result.provider, model: result.model, raw: result.text });
+      else log(`vision sample ${attempt + 1}: unparsable -> ${String(result.text).slice(0, 120)}`);
+    } catch (error) {
+      log(`vision sample ${attempt + 1} failed: ${String(error?.message ?? error)}`);
+      if (attempt === 0 && runs.length === 0) throw error;
+    }
+  }
+  if (runs.length === 0) throw new Error("模型没有返回可解析的题号位置。");
+
+  const primary = runs.reduce((best, run) => (run.questions.length > best.questions.length ? run : best), runs[0]);
+  let questions = primary.questions;
+  let samples = 1;
+  const sameShape = runs.filter((run) => run.questions.length === primary.questions.length);
+  if (sameShape.length > 1) {
+    samples = sameShape.length;
+    questions = primary.questions.map((question, index) => {
+      const values = sameShape.map((run) => Number(run.questions[index]?.y)).filter((value) => Number.isFinite(value));
+      const average = values.reduce((sum, value) => sum + value, 0) / (values.length || 1);
+      return { label: question.label, y: Number.isFinite(average) ? Math.round(average * 10) / 10 : question.y };
+    });
+    log(`vision averaged ${samples} samples: ${questions.map((q) => `${q.label}@${q.y}`).join(", ")}`);
+  }
+
+  return { questions, provider: primary.provider, model: primary.model, raw: primary.raw, samples };
 }
 
 function enqueue(task) {
@@ -201,10 +268,11 @@ async function splitOnePage(args) {
   const language = typeof args.language === "string" && args.language.trim() ? args.language.trim() : "auto";
   const format = args.format === "jpg" ? "jpg" : "png";
   const quality = Number.isFinite(Number(args.quality)) ? Math.min(100, Math.max(40, Number(args.quality))) : 92;
+  const mode = args.mode === "ai" || args.mode === "local" ? args.mode : "auto";
   const fileName = sanitizeName(args.fileName, `第${pageIndex}页`);
 
   await ensureDirs();
-  const { buffer, ext } = decodeImagePayload(args.dataUrl, args.fileName);
+  const { buffer, ext, mediaType } = decodeImagePayload(args.dataUrl, args.fileName);
   const pageKey = `p${String(pageIndex).padStart(2, "0")}`;
   const workDir = path.join(tmpDir, jobId, pageKey);
   const thumbDir = path.join(thumbDirRoot, jobId, pageKey);
@@ -212,12 +280,20 @@ async function splitOnePage(args) {
   const result = await processImage({
     imageBuffer: buffer,
     ext,
+    mediaType,
     fileName,
     pageIndex,
     pageCount,
     language,
     format,
     quality,
+    mode,
+    visionAnalyze: async ({ imageBuffer: visionBuffer, mediaType: visionMediaType }) =>
+      analyzeWithVision({
+        imageBase64: visionBuffer.toString("base64"),
+        mediaType: visionMediaType,
+        hint: "",
+      }),
     jobDir: job.dir,
     workDir,
     thumbDir,
@@ -317,6 +393,23 @@ async function dispatch(method, args) {
     case "log":
       log(`[client] ${String(args?.message ?? "").slice(0, 2000)}`);
       return { ok: true };
+    case "visionModels": {
+      if (!hostCtx) throw new Error("插件尚未完成初始化。");
+      const models = await listVisionModels(hostCtx);
+      const target = await resolveVisionTarget(hostCtx);
+      return { ok: true, models, target };
+    }
+    case "visionProbe": {
+      const { buffer, mediaType, base64 } = decodeImagePayload(args?.dataUrl, args?.fileName);
+      const hint = typeof args?.hint === "string" ? args.hint : "";
+      const analysis = await analyzeWithVision({
+        imageBase64: base64 ?? buffer.toString("base64"),
+        mediaType,
+        hint,
+        prompt: typeof args?.prompt === "string" ? args.prompt : undefined,
+      });
+      return { ok: true, ...analysis, bytes: buffer.length };
+    }
     default:
       throw new Error(`未知方法：${String(method)}`);
   }
@@ -348,6 +441,7 @@ function readJsonBody(req) {
 }
 
 export function apply(ctx) {
+  hostCtx = ctx;
   try {
     logger = ctx.logger?.("question-splitter") ?? null;
   } catch {

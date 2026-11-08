@@ -460,6 +460,7 @@ window.__ModuleLoader__.load({
       const [progress, setProgress] = react.useState(null);
       const [language, setLanguage] = react.useState("auto");
       const [format, setFormat] = react.useState("png");
+      const [mode, setMode] = react.useState("auto");
       const [jobId, setJobId] = react.useState(null);
       const [jobDir, setJobDir] = react.useState(null);
       const [results, setResults] = react.useState([]);
@@ -600,6 +601,7 @@ window.__ModuleLoader__.load({
               dataUrl,
               language,
               format,
+              mode,
             });
             const items = Array.isArray(response.items) ? response.items : [];
             setResults((previous) => [...previous, ...items]);
@@ -624,7 +626,7 @@ window.__ModuleLoader__.load({
         setProgress(null);
         setRunning(false);
         setToast("分割完成，文件已保存");
-      }, [format, jobId, language, running]);
+      }, [format, jobId, language, mode, running]);
 
       const onDrop = react.useCallback(
         (event) => {
@@ -667,7 +669,7 @@ window.__ModuleLoader__.load({
           { className: "qsp-header" },
           h("span", { className: "qsp-header-icon" }, h(SplitIcon, { size: 20 })),
           h("span", { className: "qsp-title" }, "题目分割器"),
-          h("span", { className: "qsp-badge" }, "本地 OCR"),
+          h("span", { className: "qsp-badge" }, "本地 OCR + AI 视觉"),
           h(
             "button",
             { type: "button", className: "qsp-close", title: "关闭面板", onClick: () => layout?.selectPanel?.(null) },
@@ -684,14 +686,31 @@ window.__ModuleLoader__.load({
               "p",
               { className: "qsp-lead" },
               "上传整页题目图片，自动识别 ",
-              h("b", null, "题号（1. 2. 3. …）"),
+              h("b", null, "题号（1. 2. 3.、(1)、第1题…）"),
               " 并把每一题切成独立图片，保存到桌面「",
               h("b", null, "题目分割"),
-              "」文件夹。识别完全在本机完成，图片不会上传。",
+              "」文件夹。默认先用本机 OCR；若一页里识别不到题号（例如手写笔记），「自动」模式会改用 AI 视觉识别，此时该页图片会发送给你配置的模型。",
             ),
             h(
               "div",
               { className: "qsp-options" },
+              h(
+                "div",
+                { className: "qsp-field" },
+                h("span", { className: "qsp-field-label" }, "识别方式"),
+                h(
+                  "select",
+                  {
+                    className: "qsp-select",
+                    value: mode,
+                    onChange: (event) => setMode(event.target.value),
+                    title: "本地：离线 OCR；AI：把图片发给多模态模型识别；自动：先本地，识别不到题号时用 AI",
+                  },
+                  h("option", { value: "auto" }, "自动（本地优先）"),
+                  h("option", { value: "local" }, "本地 OCR（离线）"),
+                  h("option", { value: "ai" }, "AI 视觉（上传图片）"),
+                ),
+              ),
               h(
                 "div",
                 { className: "qsp-field" },
@@ -830,7 +849,7 @@ window.__ModuleLoader__.load({
           h(
             "div",
             { className: "qsp-footer" },
-            "提示：题号识别依赖图片清晰度；若某题没有被切开，可裁剪后重试，或改用「识别语言 = 简体中文」。",
+            "提示：印刷体优先用本地 OCR；手写内容建议选择「自动」或「AI 视觉」，AI 识别出的题号准确，但切分位置为估算值，个别题可能多带或少带一行，可裁剪后重试。",
           ),
         ),
         toast
